@@ -79,7 +79,7 @@ void loop()
   }
   client.loop();
 
-  // motion sensor and LED
+  // PIR motion sensor
   val = digitalRead(inputPin);
   if (val == 0) {
     // val 0 means no motion
@@ -91,6 +91,7 @@ void loop()
     digitalWrite(relayPin, HIGH);
   }
 
+  // publish motion delta 
   if (val != prevVal) {
     if (val == 1) {
       Serial.println("Motion started!");
@@ -102,6 +103,7 @@ void loop()
     prevVal = val;
   }
 
+  // publish motion state - but throttled to be in 250ms interval
   unsigned long currentMillis = millis();  
   if (currentMillis - lastMeasurement > 250) {   
     lastMeasurement = millis(); 
