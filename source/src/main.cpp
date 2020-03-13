@@ -7,10 +7,11 @@ String result;
 String motion;
 int val = 0;
 int prevVal = 0;
+int arm = 0;
 
 const int relayPin = D1;
 const int inputPin = D7;
-const int outPin = LED_BUILTIN;
+const int ledPin = LED_BUILTIN;
 
 unsigned long lastMeasurement = 0;
 
@@ -31,6 +32,8 @@ void reconnect()
     if (client.connect(clientId.c_str()))
     {
       Serial.println("connected");
+      // once connected `resubscribe`
+      client.subscribe("emot/control");
     }
     else
     {
@@ -43,15 +46,35 @@ void reconnect()
   }
 }
 
+// mqtt message
+void callback(char* topic, byte* payload, unsigned int length) {
+  if (strncmp(topic, "emot/control", length) == 0) {
+    if (strncmp((char *)payload, "1", length) == 0) {
+      // arm
+      arm = 1;
+      Serial.println("Arming Relay");
+    } else {
+      // un-arm
+      arm = 0;
+      Serial.println("Unarming Relay");
+    }
+  }
+  Serial.print(topic);
+  for (int i=0;i<length;i++) {
+    Serial.print((char)payload[i]);
+  }
+  Serial.println();
+}
+
 void setup()
 {
   Serial.begin(9600);
   pinMode(inputPin, INPUT);
-  pinMode(outPin, OUTPUT);
+  pinMode(ledPin, OUTPUT);
   pinMode(relayPin, OUTPUT);
 
   // init state
-  digitalWrite(outPin, LOW);
+  digitalWrite(ledPin, LOW);
   digitalWrite(relayPin, LOW);
 
   // Connect to Wi-Fi network with SSID and password
@@ -68,6 +91,7 @@ void setup()
 
   // mqtt
   client.setServer(mqtt_server, 1883);
+  client.setCallback(callback);
 }
 
 void loop()
@@ -79,16 +103,22 @@ void loop()
   }
   client.loop();
 
+  // only actuate to relay if `arm` is 1
+
   // PIR motion sensor
   val = digitalRead(inputPin);
   if (val == 0) {
     // val 0 means no motion
-    digitalWrite(outPin, LOW);
-    digitalWrite(relayPin, LOW);
+    digitalWrite(ledPin, HIGH);
+    if (arm == 1) {
+      digitalWrite(relayPin, LOW);
+    }
   } else {
     // val 1 means there's motion
-    digitalWrite(outPin, HIGH);
-    digitalWrite(relayPin, HIGH);
+    digitalWrite(ledPin, LOW);
+    if (arm == 1) {
+      digitalWrite(relayPin, HIGH);
+    }    
   }
 
   // publish motion delta 
@@ -110,6 +140,6 @@ void loop()
     char buffer[10];
     sprintf(buffer, "%d", val);
     client.publish("emot/motion_state", buffer);
-    Serial.println(buffer);
+    //Serial.println(buffer);
   }
 }
