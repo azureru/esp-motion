@@ -5,6 +5,9 @@
 
 String result;
 String motion;
+WiFiClient espClient;
+PubSubClient client(espClient);
+
 int val = 0;
 int prevVal = 0;
 int arm = 0;
@@ -16,8 +19,10 @@ const int ledPin = LED_BUILTIN;
 
 unsigned long lastMeasurement = 0;
 
-WiFiClient espClient;
-PubSubClient client(espClient);
+int buttonState; 
+int lastButtonState = LOW;
+unsigned long lastDebounceTime = 0;
+unsigned long debounceDelay = 50;
 
 // mqtt reconnect
 void reconnect()
@@ -60,7 +65,7 @@ void callback(char* topic, byte* payload, unsigned int length) {
       arm = 0;
       Serial.println("Unarming Relay");
     }    
-  } else if (strncmp(topic, "emot/manual_control", length) == 0) {
+  } else if (strncmp(topic, "emot/control", length) == 0) {
     if (strncmp((char *)payload, "1", length) == 0) {
       // arm
       relay = 1;
@@ -106,43 +111,36 @@ void setup()
   client.setCallback(callback);
 }
 
-int buttonState; 
-int lastButtonState = LOW;
-unsigned long lastDebounceTime = 0;
-unsigned long debounceDelay = 50;
-
 void loop()
 {
-  if (!client.connected())
-  {
-    reconnect();
-  }
+  // wifi maintain
+  if (!client.connected()) { reconnect(); }
   client.loop();
 
   // PIR motion sensor control relay
-  val = digitalRead(inputPin);
+  val = digitalRead(inputPin);  
   // if the sensor state is changed, due to noise or sensor trigger
   if (val != lastButtonState) {
     lastDebounceTime = millis();
   }
+  // whatever the reading is at, it's been there for longer than the debounce
+  // delay, so take it as the actual current state:    
+  // this will publish 1/0 to emot/motion_event var
   if ((millis() - lastDebounceTime) > debounceDelay) {
-      // whatever the reading is at, it's been there for longer than the debounce
-      // delay, so take it as the actual current state:    
       if (val != buttonState) {
         buttonState = val;
-        if (buttonState == 0) {
+        Serial.printf("%d", val);
+        if (buttonState == LOW) {
           Serial.println("Motion end");
           client.publish("emot/motion_event", "0");
-          relay = 0;
         } else {
-          relay = 1;
           Serial.println("Motion start");
           client.publish("emot/motion_event", "1");
         }        
       }
   }
 
-  // relay trigger - this also can be overriden by the MQTT `emot/manual_control`
+  // relay trigger code - this is manually controlled by `emot/control`
   if (relay == 1) {
       digitalWrite(ledPin, LOW);
       if (arm == 1) {
@@ -153,15 +151,6 @@ void loop()
       if (arm == 1) {
         digitalWrite(relayPin, LOW);
       }
-  }
-
-  // publish motion state - but throttled to be in 250ms interval
-  unsigned long currentMillis = millis();  
-  if (currentMillis - lastMeasurement > 250) {   
-    lastMeasurement = millis(); 
-    char buffer[10];
-    sprintf(buffer, "%d", buttonState);
-    client.publish("emot/motion_state", buffer);
   }
 
   lastButtonState = val;
